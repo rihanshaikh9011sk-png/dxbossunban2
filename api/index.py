@@ -1,8 +1,7 @@
-from flask import Flask, request, Response, render_template, jsonify, send_file
+from flask import Flask, request, Response
 import requests
 import json
 import urllib3
-import io
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 
@@ -12,8 +11,10 @@ app = Flask(__name__)
 
 LOGIN_SERVER = 'https://loginbp.ppmainecoonghj.com'
 INSPECT_URL = 'https://100067.connect.garena.com/oauth/token/inspect'
+
+# AES Key aur IV (Yeh add karna zaroori tha, warna crash hota)
 AES_KEY = b'N3bV7cX2zL5mQ8!R6tY1uI4oP9aS3^'
-AES_IV = b'0000000000000000' # Placeholder IV
+AES_IV = b'0000000000000000' 
 
 PLATFORM_TO_REGION = {
     1: 'ID', 2: 'TH', 3: 'VN', 4: 'BD', 5: 'BR', 6: 'IN', 7: 'PK',
@@ -23,9 +24,7 @@ PLATFORM_TO_REGION = {
 
 _TOKEN_CACHE = {}
 
-# Global Variable for Expired Link
-CURRENT_EXPIRED_LINK = "https://fileexpiryadmin.edgeone.dev/id?unben=0000000000000000000000000000000000000000000000000000000000000000"
-
+# Naya Function: Missing tha
 def read_varint(data, pos):
     result = 0
     shift = 0
@@ -45,7 +44,8 @@ def inspect_token(tok: str):
     if tok in _TOKEN_CACHE:
         return _TOKEN_CACHE[tok]
     try:
-        r = requests.get(INSPECT_URL, params={'token': tok}, verify=True, timeout=10)
+        # Vercel fix: verify=True
+        r = requests.get(INSPECT_URL, params={'token': tok}, verify=True, timeout=10) 
         if r.status_code != 200:
             return None
         d = r.json()
@@ -104,18 +104,21 @@ def parse_proto_ordered(raw: bytes):
             val, pos = read_varint(raw, pos)
             fields.append((fn, wt, val))
         elif wt == 1:
-            if pos + 8 > len(raw): raise ValueError('short 64')
+            if pos + 8 > len(raw):
+                raise ValueError('short 64')
             val = raw[pos:pos + 8]
             pos += 8
             fields.append((fn, wt, val))
         elif wt == 2:
             length, pos = read_varint(raw, pos)
-            if pos + length > len(raw): raise ValueError('short ld')
+            if pos + length > len(raw):
+                raise ValueError('short ld')
             val = raw[pos:pos + length]
             pos += length
             fields.append((fn, wt, val))
         elif wt == 5:
-            if pos + 4 > len(raw): raise ValueError('short 32')
+            if pos + 4 > len(raw):
+                raise ValueError('short 32')
             val = raw[pos:pos + 4]
             pos += 4
             fields.append((fn, wt, val))
@@ -124,15 +127,21 @@ def parse_proto_ordered(raw: bytes):
     return fields
 
 def encode_field(fn, wt, val):
-    if wt == 0: return encode_varint(fn << 3 | 0) + encode_varint(val)
-    elif wt == 1: return encode_varint(fn << 3 | 1) + val
-    elif wt == 2: return encode_varint(fn << 3 | 2) + encode_varint(len(val)) + val
-    elif wt == 5: return encode_varint(fn << 3 | 5) + val
+    if wt == 0:
+        return encode_varint(fn << 3 | 0) + encode_varint(val)
+    elif wt == 1:
+        return encode_varint(fn << 3 | 1) + val
+    elif wt == 2:
+        return encode_varint(fn << 3 | 2) + encode_varint(len(val)) + val
+    elif wt == 5:
+        return encode_varint(fn << 3 | 5) + val
     raise ValueError(wt)
 
 def try_parse_proto(raw: bytes):
-    try: return parse_proto_ordered(raw)
-    except Exception: return None
+    try:
+        return parse_proto_ordered(raw)
+    except Exception:
+        return None
 
 def rewrite_majorlogin(plain, open_id, access_token, region, platform, main_active):
     fields = parse_proto_ordered(plain)
@@ -140,18 +149,28 @@ def rewrite_majorlogin(plain, open_id, access_token, region, platform, main_acti
     out = []
     for fn, wt, val in fields:
         seen.add(fn)
-        if fn == 22 and wt == 2: val = open_id.encode()
-        elif fn == 26 and wt == 2: val = region.encode()
-        elif fn == 29 and wt == 2: val = access_token.encode()
-        elif fn == 99 and wt == 2: val = str(platform).encode()
-        elif fn == 100 and wt == 2: val = str(main_active).encode()
+        if fn == 22 and wt == 2:
+            val = open_id.encode()
+        elif fn == 26 and wt == 2:
+            val = region.encode()
+        elif fn == 29 and wt == 2:
+            val = access_token.encode()
+        elif fn == 99 and wt == 2:
+            val = str(platform).encode()
+        elif fn == 100 and wt == 2:
+            val = str(main_active).encode()
         out.append(encode_field(fn, wt, val))
 
-    if 22 not in seen: out.append(encode_field(22, 2, open_id.encode()))
-    if 26 not in seen: out.append(encode_field(26, 2, region.encode()))
-    if 29 not in seen: out.append(encode_field(29, 2, access_token.encode()))
-    if 99 not in seen: out.append(encode_field(99, 2, str(platform).encode()))
-    if 100 not in seen: out.append(encode_field(100, 2, str(main_active).encode()))
+    if 22 not in seen:
+        out.append(encode_field(22, 2, open_id.encode()))
+    if 26 not in seen:
+        out.append(encode_field(26, 2, region.encode()))
+    if 29 not in seen:
+        out.append(encode_field(29, 2, access_token.encode()))
+    if 99 not in seen:
+        out.append(encode_field(99, 2, str(platform).encode()))
+    if 100 not in seen:
+        out.append(encode_field(100, 2, str(main_active).encode()))
     return b''.join(out)
 
 def forward_to_endpoint(endpoint: str, query_string: bytes = b'', tok: str = ''):
@@ -173,8 +192,10 @@ def forward_to_endpoint(endpoint: str, query_string: bytes = b'', tok: str = '')
         if len(req_body) >= 16 and len(req_body) % 16 == 0:
             try:
                 dec = aes_decrypt(req_body)
-                if try_parse_proto(dec): plain = dec
-            except Exception: pass
+                if try_parse_proto(dec):
+                    plain = dec
+            except Exception:
+                pass
         if plain is None and try_parse_proto(req_body):
             plain = req_body
 
@@ -184,9 +205,11 @@ def forward_to_endpoint(endpoint: str, query_string: bytes = b'', tok: str = '')
                     plain, info['open_id'], info['access_token'], info['region'], info['platform'], info['main_active']
                 )
                 req_body = aes_encrypt(new_plain)
-            except Exception as e: print(f'[MajorLogin] rewrite failed: {e}')
+            except Exception as e:
+                print(f'[MajorLogin] rewrite failed: {e}')
 
     try:
+        # Vercel fix: verify=True
         resp = requests.request(
             method=request.method, url=target_url, headers=forward_headers,
             data=req_body, cookies=request.cookies, allow_redirects=False,
@@ -197,8 +220,10 @@ def forward_to_endpoint(endpoint: str, query_string: bytes = b'', tok: str = '')
         response_headers = [(name, value) for name, value in resp.raw.headers.items() if name.lower() not in response_excluded_headers]
         return Response(resp_body, status=resp.status_code, headers=response_headers)
 
-    except requests.exceptions.ConnectTimeout: return Response('Upstream connect timeout', status=504)
-    except requests.exceptions.ReadTimeout: return Response('Upstream read timeout', status=504)
+    except requests.exceptions.ConnectTimeout:
+        return Response('Upstream connect timeout', status=504)
+    except requests.exceptions.ReadTimeout:
+        return Response('Upstream read timeout', status=504)
     except requests.exceptions.RequestException as e:
         print(f'[ERROR] {request.method} /{endpoint} - {e}')
         return Response('Proxy Error', status=502)
@@ -206,97 +231,52 @@ def forward_to_endpoint(endpoint: str, query_string: bytes = b'', tok: str = '')
 def extract_token():
     return (request.args.get('unben') or request.args.get('access_token') or request.args.get('token') or '').strip()
 
-# =============================================================================
-# 🎯 PROXY ROUTES (Game Ke Liye)
-# =============================================================================
 @app.route('/id', methods=['GET', 'POST', 'PUT', 'DELETE', 'HEAD', 'OPTIONS', 'PATCH'])
 def id_route():
     tok_raw = extract_token()
-    if not tok_raw: return Response('FILE EXPIRED - JOIN TELEGRAM', status=400)
-    if len(tok_raw) < 64: return Response('TOKEN EXPIRED', status=400)
+    
+    # Yahan aap apna "Expire" ka message daal sakte hain. Yeh sirf browser mein dikhega.
+    if not tok_raw:
+        return Response('FILE EXPIRED - JOIN TELEGRAM: https://t.me/YourLink', status=400) 
+    if len(tok_raw) < 64:
+        return Response('TOKEN EXPIRED - JOIN TELEGRAM: https://t.me/YourLink', status=400) 
 
     token = tok_raw[:64]
     endpoint = tok_raw[64:].strip('/')
+
     info = inspect_token(token)
-    if not info: return Response('Token inspect failed / Expired', status=401)
-    if not endpoint: return Response('OK', status=200)
+    if not info:
+        return Response('TOKEN INVALID / EXPIRED', status=401)
+
+    if not endpoint:
+        return Response('OK', status=200)
     return forward_to_endpoint(endpoint, b'', token)
 
 @app.route('/login', methods=['GET', 'POST', 'PUT', 'DELETE', 'HEAD', 'OPTIONS', 'PATCH'])
 def login():
     tok_raw = extract_token()
-    if not tok_raw: return Response('FILE EXPIRED - JOIN TELEGRAM', status=400)
-    if len(tok_raw) < 64: return Response('TOKEN EXPIRED', status=400)
+    if not tok_raw:
+        return Response('FILE EXPIRED - JOIN TELEGRAM', status=400)
+    if len(tok_raw) < 64:
+        return Response('TOKEN EXPIRED', status=400)
 
     token = tok_raw[:64]
     endpoint = tok_raw[64:].strip('/')
+
     info = inspect_token(token)
-    if not info: return Response('Token inspect failed / Expired', status=401)
-    if not endpoint: return Response('OK', status=200)
+    if not info:
+        return Response('TOKEN INVALID / EXPIRED', status=401)
+
+    if not endpoint:
+        return Response('OK', status=200)
     return forward_to_endpoint(endpoint, b'', token)
 
 @app.route('/', defaults={'path': ''}, methods=['GET', 'POST', 'PUT', 'DELETE', 'HEAD', 'OPTIONS', 'PATCH'])
 @app.route('/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE', 'HEAD', 'OPTIONS', 'PATCH'])
 def proxy(path):
-    # Agar website open ho rahi hai (bina proxy path ke)
-    if not path:
-        return render_template('index.html')
-    
-    # Agar game request bhej raha hai
     tok = extract_token()
+    if not path:
+        return Response('OK', status=200)
     return forward_to_endpoint(path, request.query_string, tok[:64])
 
-
-# =============================================================================
-# 🎯 WEBSITE API ROUTES (Admin Panel Ke Liye)
-# =============================================================================
-
-@app.route('/api/set_expiry', methods=['POST'])
-def set_expiry():
-    global CURRENT_EXPIRED_LINK
-    data = request.json
-    tg_link = data.get('telegram_link', '')
-
-    if not tg_link:
-        return jsonify({"status": "error", "message": "Telegram link required!"})
-
-    # Yahan hum expired link bana rahe hain (Token 000... kar diya)
-    # Yeh line game mein login fail karegi
-    CURRENT_EXPIRED_LINK = f"https://fileexpiryadmin.edgeone.dev/id?unben=0000000000000000000000000000000000000000000000000000000000000000"
-    
-    return jsonify({
-        "status": "success", 
-        "message": f"File Expired! Users will now get error & your link: {tg_link}"
-    })
-
-@app.route('/api/download_expired')
-def download_expired():
-    # Yeh expired JSON file download karega
-    config_data = {"serverUrl": CURRENT_EXPIRED_LINK}
-    json_bytes = json.dumps(config_data, indent=2).encode('utf-8')
-    return send_file(
-        io.BytesIO(json_bytes),
-        mimetype='application/json',
-        as_attachment=True,
-        download_name='localConfig_Expired.json'
-    )
-
-@app.route('/api/download_working')
-def download_working():
-    # Yeh working JSON file download karega (Aapka asli server link yahan aayega)
-    # DHYAN DEIN: Is link ko apne asli server se replace karein
-    working_link = "https://fileexpiryadmin.edgeone.dev/id?unben=227a659e121bdaa65b31bf6a96970a88628fa4f72e3b4362d857535d0502382c"
-    config_data = {"serverUrl": working_link}
-    json_bytes = json.dumps(config_data, indent=2).encode('utf-8')
-    return send_file(
-        io.BytesIO(json_bytes),
-        mimetype='application/json',
-        as_attachment=True,
-        download_name='localConfig_Working.json'
-    )
-
-# Vercel handler
 handler = app
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080)
